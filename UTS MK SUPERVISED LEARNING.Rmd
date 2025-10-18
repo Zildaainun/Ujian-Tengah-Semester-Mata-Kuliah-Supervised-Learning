@@ -270,7 +270,7 @@ pred_B <- predict(ModelB, newdata = Gaji_test)
 rmse_B <- rmse(Gaji_test$Gaji_Bulanan, pred_B)
 AIC_B <- AIC(ModelB)
 
-# Model C (glmnet)
+# Model C (Ridge Regression)
 x_test_raw <- model.matrix(Gaji_Bulanan ~ ., Gaji_test)[, -1]
 x_test_scaled <- scale(x_test_raw, center = attr(x_matrix_scaled, "scaled:center"),
                        scale = attr(x_matrix_scaled, "scaled:scale"))
@@ -288,7 +288,7 @@ AIC_D <- AIC(ModelD)
 
 # Tabel evaluasi
 evaluasi <- data.frame(
-  Model = c("Model A", "Model B", "Model C", "Model D"),
+  Model = c("Model A (OLS)", "Model B (GLS)", "Model C (Ridge Regression)", "Model D (WLS)"),
   RMSE = c(rmse_A, rmse_B, rmse_C, rmse_D),
   Adjusted_R2 = c(adjR2_A, NA, NA, adjR2_D),
   AIC = c(AIC_A, AIC_B, NA, AIC_D)
@@ -298,7 +298,7 @@ evaluasi
 
 ### b. Pilih satu model terbaik sebagai "model juara" yang akan Anda rekomendasikan. Jelaskan alasan pilihan Anda secara komprehensif, dengan mempertimbangkan keseimbangan antara performa prediktif, stabilitas koefisien, dan pemenuhan asumsi.
 
-Setelah mengevaluasi semua model, aku merekomendasikan Model D (WLS) sebagai model juara. Model D menunjukan hasil prediksi paling akurat karena RMSE-nya terkecil, artinya prediksi gaji bulanan paling mendekati nilai sebenarnya. Selain itu, penggunaan bobot WLS membuat koefisien model lebih stabil dan membantu mengatasi masalah varians residual yang tidak merata, sehingga asumsi homoskedastisitas lebih terpenuhi. Meskipun Model A dan B memiliki nilai Adjusted R² dan AIC yang bagus, mereka tidak  menangani heteroskedastisitas, sedangkan Model C (glmnet) performa prediksinya kurang optimal. Dengan mempertimbangkan akurat, stabil, dan sesuai asumsi, Model D menjadi pilihan terbaik untuk digunakan.
+Setelah mengevaluasi semua model, aku merekomendasikan Model D (WLS) sebagai model juara. Model D menunjukan hasil prediksi paling akurat karena RMSE-nya terkecil, artinya prediksi gaji bulanan paling mendekati nilai sebenarnya. Selain itu, penggunaan bobot WLS membuat koefisien model lebih stabil dan membantu mengatasi masalah varians residual yang tidak merata, sehingga asumsi homoskedastisitas lebih terpenuhi. Meskipun Model A dan B memiliki nilai Adjusted R² dan AIC yang bagus, mereka tidak  menangani heteroskedastisitas, sedangkan Model C (Ridge Regression) performa prediksinya kurang optimal. Dengan mempertimbangkan akurat, stabil, dan sesuai asumsi, Model D menjadi pilihan terbaik untuk digunakan.
 
 ## 4. Interpretasi dan Rekomendasi Bisnis
 
