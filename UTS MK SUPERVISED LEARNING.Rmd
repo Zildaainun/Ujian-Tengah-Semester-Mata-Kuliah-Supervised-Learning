@@ -36,7 +36,7 @@ library(caret)
 ```{r, echo=TRUE}
 Gaji_bulanan <- read_excel("C:/Users/Lenovo IP Slim 3/Downloads/Raw Data Model Prediksi Gaji Bulanan.xlsx")
 
-kable(head(Gaji_bulanan, 10), caption = "Tinjauan 10 baris pertama data Gaji_bulanan")
+head(Gaji_bulanan)
 summary(Gaji_bulanan)
 ```
 ## 1. Konstruksi dan Diagnosis Model Awal
@@ -73,17 +73,16 @@ if (any(vif_values > 10)) {
 
 cat("\n--- Matriks Korelasi Antar Prediktor ---\n")
 cor_matrix <- cor(Gaji_bulanan[, -which(names(Gaji_bulanan) == "Gaji_Bulanan")])
-kable(cor_matrix, caption = "Matriks Korelasi Antar Variabel Prediktor", digits = 3)
 
 corrplot(cor_matrix, 
          method = "color", 
-         type = "upper",       # hanya tampilkan segitiga atas
-         order = "hclust",     # urutkan berdasarkan kemiripan korelasi
-         tl.col = "black",     # warna teks label
-         tl.cex = 0.8,         # ukuran label
-         addCoef.col = "black",# tampilkan nilai korelasi di dalam kotak
+         type = "upper",       
+         order = "hclust",    
+         tl.col = "black",     
+         tl.cex = 0.8,         
+         addCoef.col = "black",
          col = colorRampPalette(brewer.pal(8, "RdBu"))(200),
-         number.cex = 0.6,     # ukuran angka korelasi
+         number.cex = 0.6,     
          mar = c(0,0,1,0),
          title = "Heatmap Korelasi Antar Variabel Prediktor")
 
@@ -217,7 +216,6 @@ x_matrix_raw <- model.matrix(Gaji_Bulanan ~ ., data = Gaji_bulanan)[, -1]
 y_vector <- Gaji_bulanan$Gaji_Bulanan
 
 x_matrix_scaled <- scale(x_matrix_raw)
-kable(head(x_matrix_scaled), caption = "Pratinjau Data Prediktor Setelah Distandarisasi")
 
 set.seed(123)
 cv_fit <- cv.glmnet(x_matrix_scaled, y_vector, alpha = 0) # alpha = 0 untuk Ridge
