@@ -1,0 +1,315 @@
+---
+title: "UTS SUPERVISED LEARNING"
+author: "Zilda Ainun Tazkia"
+date: "2025-10-02"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Latar Belakang
+Tim data internal PT. Digital Cemerlang telah mencoba membangun sebuah model untuk
+memprediksi gaji karyawan (Gaji_Bulanan) berdasarkan 20 faktor lainnya. Namun, hasil model awal mereka sangat meragukan. Meskipun model tersebut memiliki kemampuan prediksi yang tampak tinggi, koefisien (pengaruh) dari beberapa variabel kunci tidak stabil dan seringkali bertentangan dengan logika bisnis. Terdapat kecurigaan kuat bahwa ada masalah mendasar dalam data atau metode yang digunakan.
+
+Anda bertindak sebagai konsultan independen yang ditugaskan untuk melakukan audit menyeluruh. Tugas Anda adalah mengidentifikasi sumber masalah, membangun model alternatif
+yang lebih valid dan andal, serta memberikan rekomendasi akhir kepada manajemen.
+
+# Tujuan
+Mendiagnosis kelemahan model linier standar pada dataset yang diberikan, menerapkan
+pendekatan pemodelan yang sesuai untuk memperbaiki masalah tersebut, dan memilih model
+final terbaik yang seimbang antara akurasi prediksi dan validitas inferensial.
+
+```{r}
+library(readxl)
+library(car)
+library(glmnet)
+library(knitr)
+library(corrplot)
+library(RColorBrewer)
+library(ggplot2)
+library(ggfortify)
+library(lmtest)
+library(nlme)
+library(caret)
+```
+
+```{r, echo=TRUE}
+Gaji_bulanan <- read_excel("C:/Users/Lenovo IP Slim 3/Downloads/Raw Data Model Prediksi Gaji Bulanan.xlsx")
+
+kable(head(Gaji_bulanan, 10), caption = "Tinjauan 10 baris pertama data Gaji_bulanan")
+summary(Gaji_bulanan)
+```
+## 1. Konstruksi dan Diagnosis Model Awal
+
+### a. Bangun sebuah model linier dasar (Model A) yang menggunakan semua variabel fitur untuk memprediksi Gaji_Bulanan. Sajikan ringkasan statistik dari model ini.
+```{r}
+ModelA <- lm(Gaji_Bulanan ~ ., data = Gaji_bulanan)
+summary(ModelA)
+```
+Multiple R-squared:  0.9928 artinya sekitar 99,28% variasi Gaji_Bulanan dapat dijelaskan oleh 20 variabel independen. Itu terlalu tinggi dan terindikasi mungkin ada multikolineritas antar variabel independen atau overfitting.
+
+F-statistic: 3.454e+04, p-value: < 2.2e-16 artinya secara keseluruhan, model ini signifikan. Artinya, ada minimal satu variabel independen yang berpengaruh terhadap Gaji_Bulanan.
+
+### b. Lakukan pemeriksaan diagnostik yang komprehensif terhadap Model A. Investigasi setidaknya dua area kritis berikut:
+
+1. Stabilitas dan Independensi Fitur: Selidiki potensi adanya ketergantungan atau
+redundansi informasi yang kuat di antara variabel-variabel fitur. Tunjukkan bukti
+kuantitatifnya dan jelaskan secara rinci bagaimana masalah ini dapat merusak
+keandalan dan interpretasi koefisien model.
+```{r}
+vif_values <- vif(ModelA)
+
+print("--- Hasil Uji VIF untuk Multikolinearitas ---")
+print(vif_values)
+
+if (any(vif_values > 10)) {
+  print("POSITIF MULTIKOLINEARITAS!")
+  print("KESIMPULAN: Ada multikolinearitas")
+  high_vif_vars <- names(vif_values[vif_values > 10])
+  print(paste("Variabel dengan VIF > 10:", paste(high_vif_vars, collapse = ", ")))
+} else {
+  print("Tidak ada multikolinearitas yang serius (semua VIF < 10)")
+}
+
+cat("\n--- Matriks Korelasi Antar Prediktor ---\n")
+cor_matrix <- cor(Gaji_bulanan[, -which(names(Gaji_bulanan) == "Gaji_Bulanan")])
+kable(cor_matrix, caption = "Matriks Korelasi Antar Variabel Prediktor", digits = 3)
+
+corrplot(cor_matrix, 
+         method = "color", 
+         type = "upper",       # hanya tampilkan segitiga atas
+         order = "hclust",     # urutkan berdasarkan kemiripan korelasi
+         tl.col = "black",     # warna teks label
+         tl.cex = 0.8,         # ukuran label
+         addCoef.col = "black",# tampilkan nilai korelasi di dalam kotak
+         col = colorRampPalette(brewer.pal(8, "RdBu"))(200),
+         number.cex = 0.6,     # ukuran angka korelasi
+         mar = c(0,0,1,0),
+         title = "Heatmap Korelasi Antar Variabel Prediktor")
+
+```
+Berdasarkan hasil uji VIF, ditemukan dua variabel dengan nilai VIF di atas 10, yaitu Pengalaman_Kerja (13.18) dan Jumlah_Bawahan (20.04). Hal ini menunjukkan adanya multikolinearitas kuat di antara prediktor modelA. Kondisi ini dapat menyebabkan koefisien regresi menjadi tidak stabil dan interpretasi pengaruh variabel menjadi tidak valid.
+
+2. Perilaku Sisaan (Error): Analisis sisaan dari Model A untuk memverifikasi apakah
+perilakunya sesuai dengan asumsi yang mendasari sebuah model linier yang
+valid. Sajikan bukti visual dan jelaskan dampaknya terhadap validitas uji
+signifikansi (uji-t dan uji-F) dari model Anda.
+
+
+Uji Normalitas (Shapiro-Wilk)
+
+Tujuan: Menguji apakah sisaan model berdistribusi normal.
+
+Hipotesis:
+
+H_0: Sisaan berdistribusi normal.
+
+H_1: Sisaan tidak berdistribusi normal.
+
+Kriteria Keputusan: Tolak H_0 jika p-value < 0.05. Asumsi normalitas terpenuhi jika kita gagal menolak H_0 (p-value > 0.05).
+```{r}
+print(shapiro.test(residuals(ModelA)))
+
+ggplot(data = data.frame(resid = residuals(ModelA)), aes(sample = resid)) +
+  stat_qq(color = "steelblue") +
+  stat_qq_line(color = "red", linewidth = 1) +
+  labs(title = "Plot QQ Normalitas Residual (Model A)",
+       x = "Kuantil Teoretis",
+       y = "Kuantil Residual") +
+  theme_minimal()
+```
+Nilai W = 0.99472 dengan p-value = 1.449e-12. Karena p-value < 0.05, maka H0 ditolak. Artinya, residual tidak berdistribusi normal. Pada plot QQ, titik-titik menyimpang dari garis diagonal, terutama di bagian ekor, yang menunjukkan adanya penyimpangan normalitas.
+
+
+Uji Homoskedastisitas (Breusch-Pagan)
+
+Tujuan: Menguji apakah varians dari sisaan konstan (homoskedastisitas) atau tidak (heteroskedastisitas).
+
+Hipotesis:
+
+H_0: Varians sisaan konstan (homoskedastisitas).
+
+H_1: Varians sisaan tidak konstan (terdapat heteroskedastisitas).
+
+Kriteria Keputusan: Tolak H_0 jika p-value < 0.05. Asumsi homoskedastisitas terpenuhi jika kita gagal menolak H_0 (p-value > 0.05).
+```{r}
+print(bptest(ModelA))
+
+ggplot(data = data.frame(
+  fitted = fitted(ModelA),
+  resid = resid(ModelA)
+), aes(x = fitted, y = resid)) +
+  geom_point(alpha = 0.5, color = "steelblue") +
+  geom_hline(yintercept = 0, color = "red", linewidth = 1) +
+  labs(title = "Plot Sisaan vs Nilai Prediksi (Model A)",
+       x = "Nilai Prediksi (Fitted Values)",
+       y = "Sisaan (Residuals)") +
+  theme_minimal()
+```
+Nilai BP = 40.311 dengan p-value = 0.004562. Karena p-value < 0.05, maka H0 ditolak. Hal ini menunjukkan adanya heteroskedastisitas, yaitu varians residual tidak konstan.Plot residual terhadap nilai prediksi menunjukkan pola melebar seperti corong, memperkuat indikasi heteroskedastisitas.
+
+
+Uji Autokorelasi (Durbin-Watson)
+
+Tujuan: Menguji apakah ada korelasi antar sisaan pada observasi yang berdekatan. Autokorelasi umumnya menjadi masalah pada data deret waktu (time series).
+
+Hipotesis:
+
+H_0: Tidak ada autokorelasi (koefisien autokorelasi = 0).
+
+H_1: Terdapat autokorelasi.
+
+Kriteria Keputusan: Tolak H_0 jika p-value < 0.05. Asumsi independensi sisaan terpenuhi jika kita gagal menolak H_0 (p-value > 0.05).
+```{r}
+print(dwtest(ModelA))
+
+acf_data <- acf(residuals(ModelA), plot = FALSE)
+acf_df <- data.frame(lag = acf_data$lag[-1],
+                     acf = acf_data$acf[-1])
+
+ggplot(acf_df, aes(x = lag, y = acf)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_hline(yintercept = 0, color = "black") +
+  geom_hline(yintercept = c(0.2, -0.2), color = "red", linetype = "dashed") +
+  labs(title = "Plot ACF Residual (Model A)",
+       x = "Lag",
+       y = "Autokorelasi") +
+  theme_minimal()
+```
+Nilai DW = 0.27417 dengan p-value < 2.2e-16. Karena p-value < 0.05 dan DW jauh di bawah 2, maka terdapat autokorelasi positif yang signifikan antar residual. Plot ACF menunjukkan banyak batang autokorelasi melewati batas kepercayaan, menandakan adanya pola keterkaitan antar sisaan.
+
+Kondisi ini menyebabkan hasil uji signifikansi (uji-t dan uji-F) menjadi tidak valid, serta interpretasi pengaruh masing-masing variabel dapat menyesatkan. Oleh karena itu, diperlukan perbaikan model.
+
+## 2. Pengembangan Model Perbaikan
+
+### a.  Berdasarkan setiap masalah utama yang Anda identifikasi pada langkah (1.b) usulkan dan terapkan metode pemodelan alternatif yang secara teoritis dirancang untuk mengatasi masalah tersebut. Anda diharapkan membangun setidaknya dua model perbaikan (Model B dan Model C), di mana masing-masing model menargetkan satu masalah spesifik yang telah Anda diagnosis.
+
+Gunakan metode GLS untuk menangani masalah autokorelasi sekaligus heteroskedastisitas  pada data Gaji_bulanan A.
+```{r}
+Gaji_bulanan$time <- 1:nrow(Gaji_bulanan)
+
+ModelB <- gls(Gaji_Bulanan ~.,
+              data = Gaji_bulanan,
+              weights = varFixed(~Tingkat_Pendidikan),
+              correlation = corAR1(form = ~time))
+
+summary(ModelB)
+
+sisaan_gls <- residuals(ModelB, type = "normalized")
+fitted_gls <- fitted(ModelB)
+
+# Validasi Heteroskedastisitas dengan Model B
+plot(fitted_gls, sisaan_gls,
+     main = "Sisaan vs Fitted (GLS)",
+     xlab = "Fitted Values", ylab = "Normalized Residuals")
+abline(h = 0, col = "red", lty = 2)
+
+# Validasi Autokorelasi dengan Model B
+par(mfrow = c(1, 2))
+acf(sisaan_gls, main = "ACF dari Sisaan GLS")
+pacf(sisaan_gls, main = "PACF dari Sisaan GLS")
+par(mfrow = c(1, 1))
+```
+
+Gunakan metode ridge regresi untuk menangani masalah multikolineritas pada data Gaji_bulanan.
+```{r}
+x_matrix_raw <- model.matrix(Gaji_Bulanan ~ ., data = Gaji_bulanan)[, -1]
+y_vector <- Gaji_bulanan$Gaji_Bulanan
+
+x_matrix_scaled <- scale(x_matrix_raw)
+kable(head(x_matrix_scaled), caption = "Pratinjau Data Prediktor Setelah Distandarisasi")
+
+set.seed(123)
+cv_fit <- cv.glmnet(x_matrix_scaled, y_vector, alpha = 0) # alpha = 0 untuk Ridge
+best_lambda <- cv_fit$lambda.min
+print(paste("Lambda terbaik yang ditemukan:", best_lambda))
+
+ModelC <- glmnet(x_matrix_scaled, y_vector, alpha = 0, lambda = best_lambda)
+```
+
+Gunakan metode WLS untuk menangani masalah heteroskedastisitas pada data Gaji_bulanan.
+```{r}
+residuals_A <- residuals(ModelA)
+cor_abs <- sapply(Gaji_bulanan[, -which(names(Gaji_bulanan) == "Gaji_Bulanan")],
+                  function(x) cor(abs(residuals_A), x))
+sort(cor_abs, decreasing = TRUE)
+
+bobot_wls <- 1 / Gaji_bulanan$Tingkat_Pendidikan^2
+
+ModelD <- lm(Gaji_Bulanan ~ .,
+             data = Gaji_bulanan, weights = bobot_wls)
+
+summary(ModelD)
+
+bptest(ModelD)
+```
+
+
+### b.  Untuk setiap model perbaikan yang Anda bangun, berikan justifikasi yang jelas mengapa pendekatan tersebut adalah solusi yang tepat untuk masalah yang diidentifikasi.
+
+Model B dibangkitkan untuk mengatasi dua permasalahan sekaligus yang masih muncul pada Model A sebelumnya, yaitu heteroskedastisitas dan autokorelasi. Berdasarkan hasil uji Durbin-Watson dengan nilai DW sebesar 0,27 dan p-value < 0,05, diketahui bahwa residual model mengalami autokorelasi positif. Untuk menangani masalah tersebut, digunakan metode Generalized Least Squares (GLS) dengan struktur korelasi autoregressive orde satu (AR(1)) yang mampu menangani korelasi antar residual dari satu observasi ke observasi berikutnya dalam data berurutan. Dari hasil Model B output plot ACF menunjukan Hampir semua nilai ACF berada di dalam batas signifikansi (garis biru putus-putus). Tidak ada pola berulang atau lonjakan signifikan di lag tertentu artinya dengan metode GLS, autokorelasi residual sudah tertangani.
+
+Model D dibangkitkan sebagai untuk perbaikan terhadap Model A yang sebelumnya menunjukkan adanya pelanggaran asumsi klasik berupa heteroskedastisitas, berdasarkan hasil uji Breusch-Pagan yang memiliki nilai p-value < 0,05. Kondisi ini mengindikasikan bahwa varians residual tidak konstan, sehingga Model A menjadi tidak efisien dan varians kesalahan antar pengamatan berbeda-beda. Untuk mengatasi hal tersebut, digunakan metode Weighted Least Squares (WLS) yang memberikan bobot berbeda pada setiap observasi. Bobot ditentukan berdasarkan variabel prediktor yang paling berpengaruh terhadap varians residual, yaitu variabel dengan korelasi tertinggi terhadap error. Hasil uji Breusch-Pagan dengan menggunakan metode WLS di Model D menunjukan p-value sebesar 0.8 > 0.05 artinya menandakan metode WLS sudah menangani heteroskedastisitas.
+
+## 3. Evaluasi Komparatif dan Pemilihan Model Juara
+
+### a. Buat sebuah tabel perbandingan untuk mengevaluasi performa semua model yang telah Anda bangun (Model A, Model B, Model C, dst.). Gunakan metrik yang relevan, mencakup setidaknya satu metrik untuk akurasi prediksi (contoh: RMSE atau MAE, disarankan menggunakan data validasi/testing) dan satu metrik untuk kecocokan & kompleksitas model (contoh: Adjusted R-squared, AIC, atau BIC).
+```{r}
+rmse <- function(actual, pred) sqrt(mean((actual - pred)^2))
+
+train_index <- createDataPartition(Gaji_bulanan$Gaji_Bulanan, p = 0.7, list = FALSE)
+Gaji_train <- Gaji_bulanan[train_index, ]
+Gaji_test <- Gaji_bulanan[-train_index, ]
+
+# Model A
+pred_A <- predict(ModelA, newdata = Gaji_test)
+rmse_A <- rmse(Gaji_test$Gaji_Bulanan, pred_A)
+adjR2_A <- summary(ModelA)$adj.r.squared
+AIC_A <- AIC(ModelA)
+
+# Model B
+pred_B <- predict(ModelB, newdata = Gaji_test)
+rmse_B <- rmse(Gaji_test$Gaji_Bulanan, pred_B)
+AIC_B <- AIC(ModelB)
+
+# Model C (glmnet)
+x_test_raw <- model.matrix(Gaji_Bulanan ~ ., Gaji_test)[, -1]
+x_test_scaled <- scale(x_test_raw, center = attr(x_matrix_scaled, "scaled:center"),
+                       scale = attr(x_matrix_scaled, "scaled:scale"))
+y_test <- Gaji_test$Gaji_Bulanan
+
+
+pred_C <- predict(ModelC, s = best_lambda, newx = x_test_scaled)
+rmse_C <- rmse(y_test, pred_C)
+
+# Model D (WLS)
+pred_D <- predict(ModelD, newdata = Gaji_test)
+rmse_D <- rmse(Gaji_test$Gaji_Bulanan, pred_D)
+adjR2_D <- summary(ModelD)$adj.r.squared
+AIC_D <- AIC(ModelD)
+
+# Tabel evaluasi
+evaluasi <- data.frame(
+  Model = c("Model A", "Model B", "Model C", "Model D"),
+  RMSE = c(rmse_A, rmse_B, rmse_C, rmse_D),
+  Adjusted_R2 = c(adjR2_A, NA, NA, adjR2_D),
+  AIC = c(AIC_A, AIC_B, NA, AIC_D)
+)
+evaluasi
+```
+
+### b. Pilih satu model terbaik sebagai "model juara" yang akan Anda rekomendasikan. Jelaskan alasan pilihan Anda secara komprehensif, dengan mempertimbangkan keseimbangan antara performa prediktif, stabilitas koefisien, dan pemenuhan asumsi.
+
+Setelah mengevaluasi semua model, aku merekomendasikan Model D (WLS) sebagai model juara. Model D menunjukan hasil prediksi paling akurat karena RMSE-nya terkecil, artinya prediksi gaji bulanan paling mendekati nilai sebenarnya. Selain itu, penggunaan bobot WLS membuat koefisien model lebih stabil dan membantu mengatasi masalah varians residual yang tidak merata, sehingga asumsi homoskedastisitas lebih terpenuhi. Meskipun Model A dan B memiliki nilai Adjusted R² dan AIC yang bagus, mereka tidak  menangani heteroskedastisitas, sedangkan Model C (glmnet) performa prediksinya kurang optimal. Dengan mempertimbangkan akurat, stabil, dan sesuai asumsi, Model D menjadi pilihan terbaik untuk digunakan.
+
+## 4. Interpretasi dan Rekomendasi Bisnis
+
+### a. Gunakan model juara pilihan Anda untuk menginterpretasikan pengaruh dari variabel yang Anda anggap paling krusial dalam menentukan Gaji_Bulanan. Pastikan interpretasi Anda jelas dan mudah dipahami.
+
+Berdasarkan Model D, salah satu variabel yang paling krusial dalam menentukan Gaji_Bulanan adalah Tingkat_Pendidikan. Hasil model membuktikan bahwa semakin tinggi tingkat pendidikan yang ditempuh seorang karyawan maka gajinya juga akan semakin besar, hal ini masuk akal karna tingkat pendidikan mempengaruhi kemampuan (skill) dan pemahaman setiap karyawan. Variabel lain, seperti Lama Pengalaman Kerja atau Jabatan, juga berpengaruh, namun efeknya lebih kecil dibanding pendidikan. 
+
+### b. Tuliskan sebuah ringkasan eksekutif (1-2 paragraf) untuk manajemen PT. Digital Cemerlang. Jelaskan dalam bahasa non-teknis mengapa analisis awal mereka bermasalah, bagaimana pendekatan Anda memperbaikinya, dan berikan dua rekomendasi strategis yang dapat ditindaklanjuti berdasarkan wawasan dari model final Anda.
+
+Analisis awal PT. Digital Cemerlang terhadap faktor-faktor yang mempengaruhi gaji karyawan ternyata kurang akurat karena mungkin tidak memperhitungkan perbedaan karakteristik tiap karyawan dan variasi data yang ada. Dengan menggunakan metode baru saya menggunakan model WLS, model WLS mampu menyesuaikan pengaruh setiap variabel sesuai kondisi karyawan, sehingga prediksi gaji menjadi lebih tepat dan faktor-faktor penting lebih jelas terlihat, terutama tingkat pendidikan dan lama pengalaman kerja.
+
+Berdasarkan hasil model WLS, ada dua langkah strategis yang saya rekomendasikan. Pertama, perusahaan sebaiknyameningkatkan SDM atau menyetarakan kemampuan dan pemahaman karyawan dengan pengembangan pendidikan dan pelatihan karyawan seperti workshop perusahaan, karena hal ini mampu meningkatkan gaji dan produktivitas. Kedua, struktur rekrutmen dan gaji bisa diperbaiki dengan memberi perhatian lebih pada kualifikasi pendidikan dan pengalaman, sehingga sistem gaji menjadi lebih adil, transparan, dan memotivasi karyawan untuk terus berkembang.
